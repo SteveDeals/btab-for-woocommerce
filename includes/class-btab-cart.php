@@ -74,6 +74,49 @@ class Btab_WC_Cart
     }
 
     /**
+     * The btab lines in a WooCommerce ORDER.
+     *
+     * The checkout hand-off reads the order, not the cart: by the time the
+     * gateway runs, the order is the record of what the buyer asked for, and
+     * the cart may already have been emptied by another tab.
+     *
+     * @param WC_Order $order
+     * @return array{lines:array,btab_items:int,other_items:int}
+     */
+    public static function read_order($order)
+    {
+        $lines = array();
+        $btab_items = 0;
+        $other_items = 0;
+
+        foreach ($order->get_items() as $item) {
+            $quantity = (int) $item->get_quantity();
+            if ($quantity < 1) {
+                continue;
+            }
+            $product_id = (int) $item->get_product_id();
+            $variation_id = (int) $item->get_variation_id();
+
+            $btab_product_id = $product_id ? (int) get_post_meta($product_id, BTAB_WC_META_PRODUCT_ID, true) : 0;
+            if (!$btab_product_id) {
+                $other_items += $quantity;
+                continue;
+            }
+            $line = array('product_id' => $btab_product_id, 'quantity' => $quantity);
+            if ($variation_id) {
+                $variant_id = (int) get_post_meta($variation_id, '_btab_variant_id', true);
+                if ($variant_id) {
+                    $line['variant_id'] = $variant_id;
+                }
+            }
+            $lines[] = $line;
+            $btab_items += $quantity;
+        }
+
+        return array('lines' => $lines, 'btab_items' => $btab_items, 'other_items' => $other_items);
+    }
+
+    /**
      * A stable fingerprint of the lines, so the same cart is not rebuilt and
      * the same freight question is not asked twice.
      *

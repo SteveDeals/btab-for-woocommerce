@@ -21,6 +21,13 @@ class Btab_WC_Shipping_Method extends WC_Shipping_Method
         // Deliberately NOT 'shipping-zones': that is what makes it global.
         $this->supports = array('settings');
 
+        // NOT TAXABLE. btab's figure is the whole freight with GST already in
+        // it and the API sends no breakdown, so nothing may be added to it.
+        // This property is what WC_Shipping_Method::is_taxable() reads, which
+        // settles the CART. It does NOT settle the ORDER: see the hook in
+        // class-btab-delivery.php and the comment there.
+        $this->tax_status = 'none';
+
         $this->init_form_fields();
         $this->init_settings();
 

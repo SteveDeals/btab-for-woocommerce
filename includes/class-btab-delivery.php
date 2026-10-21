@@ -50,6 +50,7 @@ class Btab_WC_Delivery
         add_filter('woocommerce_shipping_methods', array(__CLASS__, 'register_method'));
         // Late, so every zone method has already added its rate and can be removed.
         add_filter('woocommerce_package_rates', array(__CLASS__, 'only_btab_rate_on_btab_packages'), 100, 2);
+        add_action('woocommerce_order_item_shipping_after_calculate_taxes', array(__CLASS__, 'no_tax_on_our_shipping'), 10, 1);
     }
 
     public static function register_method($methods)
@@ -79,6 +80,36 @@ class Btab_WC_Delivery
             }
         }
         return $kept;
+    }
+
+    /**
+     * Keep the ORDER's freight line untaxed, as the cart's already is.
+     *
+     * THE SHORT VERSION: without this the shop's order said $73.64 where btab
+     * charged $71.95. Measured on a real test order, not reasoned about.
+     *
+     * The long version, because it is not obvious and the next person will
+     * hit it. WooCommerce taxes shipping in two separate places. The cart
+     * honours `'taxes' => false` on the rate and the method's `tax_status`.
+     * The ORDER does neither: WC_Order_Item_Shipping::calculate_taxes()
+     * recomputes from the shipping tax class, and the only escape it offers is
+     * its own get_tax_status(), which resolves the method by INSTANCE ID —
+     * `WC_Shipping_Zones::get_shipping_method( $this->get_instance_id() )`.
+     * Our method is zone-less by design (see the top of this file), so its
+     * instance id is 0, the lookup returns false, and WooCommerce falls back
+     * to "taxable" whatever the method says. The property is not ignored; it
+     * is unreachable for a method that is not in a zone.
+     *
+     * So the order's line is cleared here, on the action WooCommerce fires at
+     * the end of that very method, and only for our own rate.
+     *
+     * @param WC_Order_Item_Shipping $item
+     */
+    public static function no_tax_on_our_shipping($item)
+    {
+        if ($item instanceof WC_Order_Item_Shipping && $item->get_method_id() === self::METHOD_ID) {
+            $item->set_taxes(false);
+        }
     }
 
     /**

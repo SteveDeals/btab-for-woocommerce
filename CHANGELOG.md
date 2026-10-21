@@ -9,8 +9,8 @@ when it does.
 
 ## 0.1.0 — 2026-10-21
 
-First release. **Product import only** — delivery and checkout come next, so a
-shop cannot yet take an order through this plugin.
+First release: a shop can import btab's products, quote delivery and take an
+order, end to end, with no btab anywhere a buyer can see.
 
 ### Added
 - Products are imported as **real** WooCommerce products, simple and variable,
@@ -26,6 +26,26 @@ shop cannot yet take an order through this plugin.
 - Settings screen: API base, publishable key, resync interval, **Test
   connection**.
 - A store API key (`btab_live_…`) is refused before it is sent.
+- **Delivery is priced by btab**, per cart and postcode, as a WooCommerce
+  shipping method. It applies to every destination rather than belonging to a
+  shipping zone, and it replaces this shop's own rates on any cart holding btab
+  products, so the shop can never charge its own freight for btab's goods.
+  Freight is cached for ten minutes per cart and postcode.
+- **An item btab cannot price freight for** reads as "needs a delivery quote",
+  never as free.
+- **Checkout hands the cart to btab**: Place order opens a checkout session and
+  sends the buyer to btab's checkout page on **your** domain, then back to your
+  own thank-you page. The order is marked paid because btab says it was paid,
+  never because the buyer landed on a URL.
+- **No other payment method can take money for btab products**, so a
+  pre-installed gateway cannot collect for goods nothing will ship.
+- Your own WooCommerce emails are sent as usual, from your own domain.
+
+### Not in this release
+- **Mixed carts.** btab's products and your own goods in one cart get no
+  delivery option and no way to pay, with a line asking for two orders. There
+  is no honest single freight price for the two together.
+- The order copy in wp-admin (paid, refunded, tracking) and locked btab fields.
 
 ### Notes for anyone reading the code
 - `lib/` is a portable PHP core with no WordPress in it, so another platform

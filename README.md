@@ -30,7 +30,7 @@ Three decisions worth knowing, because they are what keeps the shop behaving lik
 
 **What it does.** Your WooCommerce shop sells btab's products as if they were your own. The plugin copies them in as real WooCommerce products — title, price, photos, stock, variants, categories — and keeps them fresh. When a buyer presses **Place order**, the cart is handed to btab, which prices every line and takes the payment. You keep your own domain, your own theme and your own emails.
 
-**What a buyer sees: your shop, and nothing else.** No btab in any address, image URL, page text or markup. The plugin copies product photos into your own Media Library rather than linking btab's image host, loads no CSS or JavaScript on a buyer-facing page, and keeps btab out of every id, class and visible string. There is a check for it in `docs/` and the project treats a failure of it as a bug.
+**What a buyer sees: your shop, and nothing else.** No btab in any address, image URL, page text or markup. The plugin copies product photos into your own Media Library rather than linking btab's image host, and keeps btab out of every id, class and visible string — including the ones nobody sees on screen, like a form field's id. Product and category pages load no plugin files at all. The checkout loads one small script, because WooCommerce's block checkout will not show a payment option that does not register itself in JavaScript; it is served from **your** domain at a plain address, it names nothing, and it does nothing but draw the payment option. The project treats a buyer finding btab anywhere as a bug, and checks it by reading the page source and the network rather than the screen.
 
 ### Get a key
 1. Sign in to your btab dashboard.
