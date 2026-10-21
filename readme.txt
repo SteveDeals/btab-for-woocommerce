@@ -37,7 +37,6 @@ Your WooCommerce shop sells btab's products as if they were your own. The plugin
 Said plainly, so you can judge whether it is useful to you now:
 
 * Mixed carts: btab's products and your own goods together get no delivery option and no way to pay, with a line asking for two orders. There is no honest single freight price for the two
-* Your own variations on a btab product: btab cannot ship a variation it has never heard of, so one you add is shown but cannot be bought. Delete it yourself if you do not want it on the page
 * Tracking numbers are not yet copied back into WooCommerce: btab's order messages do not carry them yet
 * Refunds are reflected in the order's status, but the money is refunded by the supplier, not through your gateway
 

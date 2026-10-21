@@ -64,7 +64,6 @@ Said plainly, because a plugin that implies more than it does wastes your aftern
 | Updating itself when btab publishes a new version | **works** |
 | **Tracking numbers copied back into WooCommerce** | **not yet** — btab's order messages do not carry them |
 | A mixed cart: btab's products and your own goods together | not yet — there is no honest single freight price for the two, so such a cart is refused with a line asking for two orders |
-| Your own variations added to a btab product | not bought — btab cannot ship a variation it has never heard of, so one you add is shown but cannot be bought |
 
 ### Try it without charging anyone
 Make a **test key** (`btab_pk_test_…`) in the same place as a live one. It reads btab's demo store of made-up goods, and its checkout ends in "Place test order" — nothing is charged and nothing is sent. The webhook for such an order says `"livemode": false`. Swap in the live key when you are happy.
