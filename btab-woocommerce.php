@@ -51,6 +51,8 @@ require_once BTAB_WC_DIR . 'includes/class-btab-settings.php';
 require_once BTAB_WC_DIR . 'includes/class-btab-importer.php';
 require_once BTAB_WC_DIR . 'includes/class-btab-sync.php';
 require_once BTAB_WC_DIR . 'includes/class-btab-catalog.php';
+require_once BTAB_WC_DIR . 'includes/class-btab-cart.php';
+require_once BTAB_WC_DIR . 'includes/class-btab-delivery.php';
 
 /**
  * WooCommerce has to be active: this plugin has nothing to do without it, and
@@ -111,6 +113,7 @@ add_action('plugins_loaded', function () {
     Btab_WC_Settings::boot();
     Btab_WC_Sync::boot();
     Btab_WC_Catalog::boot();
+    Btab_WC_Delivery::boot();
 });
 
 /**

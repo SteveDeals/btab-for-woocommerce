@@ -138,13 +138,28 @@ class Btab_Client
         return $this->request('PATCH', '/carts/' . rawurlencode((string) $cart_id), array('items' => $items));
     }
 
-    /** POST /carts/{id}/shipping-estimate — freight by postcode. */
-    public function shipping_estimate($cart_id, $postal_code)
+    /**
+     * POST /carts/{id}/shipping-estimate — freight by postcode.
+     *
+     * The answer is `{ estimate: { available, … } }`. When `available` is
+     * false, `reason` says why and `refused` marks the ones checkout itself
+     * refuses on — `SHIPPING_VOLUME_UNKNOWN` is "needs a quote", not free.
+     *
+     * @param string $cart_id
+     * @param string $postal_code
+     * @param string $country two letters; btab defaults to AU
+     */
+    public function shipping_estimate($cart_id, $postal_code, $country = 'AU')
     {
+        $body = array('postal_code' => (string) $postal_code);
+        $country = strtoupper(substr(trim((string) $country), 0, 2));
+        if ($country !== '') {
+            $body['country'] = $country;
+        }
         return $this->request(
             'POST',
             '/carts/' . rawurlencode((string) $cart_id) . '/shipping-estimate',
-            array('postal_code' => (string) $postal_code)
+            $body
         );
     }
 

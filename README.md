@@ -6,20 +6,19 @@ Sell btab products from your own WooCommerce shop, on your own domain, with no b
 
 ## How it works
 
+```mermaid
+flowchart TD
+  A[btab catalogue] -->|sync| B[Real WooCommerce products]
+  B --> C[Buyer adds to cart]
+  C --> D[Place order]
+  D -->|cart + checkout session| E[btab checkout, your domain]
+  E -->|paid| F[Your thank-you page]
 ```
-btab catalogue ──(sync: WP-Cron + "Sync now")──> real WooCommerce products
-                                                        │
-                                                 buyer adds to cart
-                                                        │
-                                            "Place order" in WooCommerce
-                                                        │
-                        plugin ──POST /carts──> btab prices every line
-                        plugin ──POST /checkout_sessions──> continue_url
-                                                        │
-                                       buyer is redirected to btab checkout
-                                                        │
-                                   pays; return_url brings them to your thank-you page
-```
+
+1. **Sync** copies btab's products in as real WooCommerce products, on a schedule and on **Sync now**.
+2. The buyer **adds to cart** on your shop, like any other product.
+3. **Place order** hands the cart to btab, which prices every line and opens a checkout session.
+4. The buyer **pays** on your own domain and comes back to your thank-you page.
 
 Three decisions worth knowing, because they are what keeps the shop behaving like a normal WooCommerce shop:
 
