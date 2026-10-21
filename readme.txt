@@ -92,6 +92,7 @@ No, and you must not use one. A store API key (`btab_live_…`) is not a shop-wi
 = 0.2.0 =
 * Delivery priced by btab, checkout handed to btab on your own domain, live updates, order copy, and btab's numbers held against accidental edits. The first version a shop can actually sell with.
 * On update from 0.1.0 the plugin asks for one full resync, so every product gets btab's reference price and stock.
+* The plugin now updates itself: new versions show up on your Updates screen like any other plugin. Every release is signed by btab, and an update that is not properly signed is refused rather than installed, so your shop can never be handed somebody else's code in btab's name.
 
 = 0.1.0 =
 * First release. Product import: real simple and variable products, photos copied into the Media Library, categories, out-of-stock, enquiry-only, resync on a schedule and a Sync now button.
@@ -103,4 +104,4 @@ No, and you must not use one. A store API key (`btab_live_…`) is not a shop-wi
 == Upgrade Notice ==
 
 = 0.2.0 =
-Import, delivery, checkout, live updates and order copy. One resync runs by itself after the update.
+Import, delivery, checkout, live updates and order copy. One resync runs by itself after the update. From this version on, updates arrive on your Updates screen.

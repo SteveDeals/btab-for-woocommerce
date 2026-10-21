@@ -12,6 +12,18 @@ when it does.
 The first version a shop can actually sell with.
 
 ### Added
+- **The plugin updates itself.** It is not on WordPress.org, so until now a shop
+  was never told a new version existed and would have had to re-upload a zip by
+  hand. It now appears on the Plugins and Updates screens like any other plugin:
+  one click. **btab signs every release, and an update without a valid btab
+  signature is not installed** — not merely one that was damaged in transit,
+  but one that was swapped for somebody else's. The signature covers both the
+  file and the version it claims to be, so an old release cannot be replayed as
+  a new one, and the signing key is held offline rather than anywhere a server
+  could leak it. The address an update may come from is fixed in the code down
+  to the exact file name, and so is the place the manifest is read from,
+  because a setting is something a request can reach and this one ships code.
+  A refusal always leaves the shop on the version it is running.
 - **The plugin remembers which version a shop is running** and runs the steps a
   new version needs. Updating from 0.1.0 asks for **one full resync a minute
   later** — on cron, so nobody is waiting on a page — because btab's reference

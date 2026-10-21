@@ -64,6 +64,7 @@ require_once BTAB_WC_DIR . 'includes/class-btab-events.php';
 require_once BTAB_WC_DIR . 'includes/class-btab-orders.php';
 require_once BTAB_WC_DIR . 'includes/class-btab-locked-fields.php';
 require_once BTAB_WC_DIR . 'includes/class-btab-upgrade.php';
+require_once BTAB_WC_DIR . 'includes/class-btab-updater.php';
 
 /**
  * WooCommerce has to be active: this plugin has nothing to do without it, and
@@ -116,6 +117,16 @@ function btab_wc_wp_transport($method, $url, array $headers, $body, $timeout)
         'body' => (string) wp_remote_retrieve_body($res),
     );
 }
+
+/**
+ * Updating is the one thing that must work when nothing else does. It is booted
+ * OUTSIDE the WooCommerce check below on purpose: a shop whose WooCommerce is
+ * deactivated, or broken, still needs to be able to take a new version of this
+ * plugin - and that is exactly the shop most likely to need one.
+ */
+add_action('plugins_loaded', function () {
+    Btab_WC_Updater::boot();
+});
 
 add_action('plugins_loaded', function () {
     if (!btab_wc_requirements_met()) {

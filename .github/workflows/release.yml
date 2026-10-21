@@ -7,6 +7,13 @@
 #
 # The release asset is also what the plugin's self-update checks, so its name
 # is stable: btab-woocommerce.zip.
+#
+# THIS WORKFLOW IS THE ONLY PLACE THE PUBLISHED ZIP IS BUILT, on purpose. The
+# plugin verifies every download against a sha256 that btab-api serves in the
+# update manifest, so there can only be ONE zip per version: a second one built
+# somewhere else (publish-public.sh was asked for this and deliberately does not
+# do it) would hash differently, and every shop would refuse the update. If you
+# are about to add a zip step anywhere else, add it here instead.
 name: Release
 
 on:
@@ -33,15 +40,22 @@ jobs:
     # To move it to self-hosted, a runner has to be registered to this repo or
     # the runners made org-level first, THEN change this line.
     runs-on: ubuntu-latest
+    # THE TAG IS READ FROM THE ENVIRONMENT, NEVER INTERPOLATED INTO A SCRIPT.
+    # inputs.tag comes from whoever can dispatch this workflow, and
+    # "${{ inputs.tag }}" pasted inside a run: block is shell injection in a
+    # job holding contents: write. As $TAG it is data, whatever it contains.
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
     steps:
-      - uses: actions/checkout@v6
+      # Pinned to a commit SHA, not a tag: a tag can be moved, and this job
+      # has contents: write on the repo that shops download from.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ env.TAG }}
 
       - name: The tag and the plugin header must agree
         run: |
           set -euo pipefail
-          TAG="${{ inputs.tag || github.ref_name }}"
           VERSION="${TAG#v}"
           HEADER="$(grep -m1 -oP '^\s*\*\s*Version:\s*\K[0-9][^\s]*' btab-woocommerce.php)"
           CONST="$(grep -m1 -oP "define\('BTAB_WC_VERSION',\s*'\K[^']+" btab-woocommerce.php)"
@@ -77,12 +91,72 @@ jobs:
           mv "$STAGE/btab-woocommerce.zip" .
           unzip -l btab-woocommerce.zip | head -20
 
-      - name: Attach it to the release
+      - name: Publish the checksum of the zip that is actually served
+        run: |
+          set -euo pipefail
+          # THIS JOB IS THE ONLY THING THAT BUILDS THE PUBLISHED ZIP, and this
+          # is the only sha256 of it. btab-api serves that sha256 to shops in
+          # the update manifest, and the plugin refuses any download that does
+          # not match it (includes/class-btab-updater.php, rule 3). So the sum
+          # has to come from the artifact that is really uploaded - a sum taken
+          # from a zip built anywhere else is a different file, and every shop
+          # in the world would then correctly refuse the update.
+          sha256sum btab-woocommerce.zip | awk '{print $1}' > btab-woocommerce.zip.sha256
+          SUM="$(cat btab-woocommerce.zip.sha256)"
+          SIZE="$(stat -c %s btab-woocommerce.zip)"
+          echo "sha256=$SUM"
+          # In the summary too, so whoever sets the knob can copy it without
+          # digging through the log.
+          {
+            echo "### btab-woocommerce.zip"
+            echo ""
+            echo "| field | value |"
+            echo "|---|---|"
+            echo "| version | \`$TAG\` |"
+            echo "| bytes | \`$SIZE\` |"
+            echo "| sha256 | \`$SUM\` |"
+            echo ""
+            echo "Set the btab-api knobs \`woocommerce_plugin_version\` and \`woocommerce_plugin_sha256\` from this table."
+            echo ""
+            echo "**Then sign it, or no shop can install it.** This job does NOT sign:"
+            echo "the key is offline and never reaches CI. On steve, download the"
+            echo "asset this job just uploaded, then sign the four-line statement"
+            echo "\`btab-woocommerce-release-v1\\n<version>\\n<sha256>\\nbtab-woocommerce.zip\`"
+            echo "with the offline release signing key, and upload the base64 detached"
+            echo "signature as \`btab-woocommerce.zip.sig\`. The plugin fetches it"
+            echo "from beside the zip and refuses to install without it."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attach it to the release, and refuse to replace a published one
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="${{ inputs.tag || github.ref_name }}"
+          # ONCE A VERSION IS PUBLISHED, ITS ZIP NEVER CHANGES. This step used
+          # to upload with --clobber, which was a real availability bug rather
+          # than a tidiness one: the zip is not reproducible (zip records
+          # mtimes), so a re-run or a workflow_dispatch rebuild of the same tag
+          # produced a DIFFERENT file with a different sha256. btab-api is
+          # already serving the first one's checksum, and the plugin refuses
+          # any download that does not match it - so every shop in the world
+          # would stop being able to update, correctly and silently.
+          #
+          # It also removes the interleaving window: two runs on one tag can no
+          # longer end up with the zip from one and the .sha256 from the other,
+          # because the second run fails here instead of overwriting.
+          #
+          # To genuinely re-cut a release: delete the release and the tag by
+          # hand, having decided that nobody has installed it yet. Turning on
+          # GitHub's immutable releases on this repo makes that explicit.
           gh release view "$TAG" >/dev/null 2>&1 \
-            || gh release create "$TAG" --title "$TAG" --notes "Install: download btab-woocommerce.zip and upload it under Plugins → Add New → Upload Plugin."
-          gh release upload "$TAG" btab-woocommerce.zip --clobber
+            || gh release create "$TAG" --title "$TAG" --notes "Install: download btab-woocommerce.zip and upload it under Plugins → Add New → Upload Plugin. Already running the plugin? It updates itself — look under Dashboard → Updates. btab-woocommerce.zip.sha256 is the checksum of the zip above, and btab-woocommerce.zip.sig is btab's signature over it."
+          existing="$(gh release view "$TAG" --json assets -q '.assets[].name' || true)"
+          for want in btab-woocommerce.zip btab-woocommerce.zip.sha256; do
+            if printf '%s\n' "$existing" | grep -qxF "$want"; then
+              echo "::error::$want is already published on $TAG and is never replaced. Delete the release and the tag by hand if it really has to be re-cut."
+              exit 1
+            fi
+          done
+          # No --clobber, on purpose: if either of these exists, the upload
+          # fails rather than overwrites, even if the check above raced.
+          gh release upload "$TAG" btab-woocommerce.zip btab-woocommerce.zip.sha256
