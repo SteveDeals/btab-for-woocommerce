@@ -9,6 +9,12 @@
  * this is the ear for them. WP-Cron stays as a NIGHTLY RECONCILE — the safety
  * net for a delivery that never arrived, never the mechanism.
  *
+ * It is also the ear for what happens to an ORDER after the buyer walks away:
+ * `checkout_session.completed`, `order.paid` and `order.refunded`, handled in
+ * class-btab-orders.php. That matters most when the buyer never comes back to
+ * the thank-you page at all — closed the tab, lost signal, went to make a cup
+ * of tea — in which case nothing else would ever mark the order paid.
+ *
  * ── THIS ROUTE IS PUBLIC, so read it as an attacker would ────────────────────
  * It is the one place an outsider can reach this plugin. Therefore:
  *   • the SIGNATURE IS CHECKED BEFORE THE BODY IS USED, over the RAW bytes.
@@ -105,33 +111,47 @@ class Btab_WC_Events
         $key = isset($event['event_key']) ? (string) $event['event_key'] : '';
         $data = isset($event['data']) && is_array($event['data']) ? $event['data'] : array();
         $btab_id = isset($data['product_id']) ? (int) $data['product_id'] : 0;
+        $is_order = in_array($name, array('checkout_session.completed', 'order.paid', 'order.refunded'), true);
 
         // A redelivery, or the same event through two subscriptions, must change
         // nothing the second time. btab's own guide says to key on event_key.
-        if ($key !== '') {
-            $seen = 'btab_wc_evt_' . md5($key);
-            if (get_transient($seen)) {
-                return new WP_REST_Response(array('ok' => true, 'repeat' => true), 200);
-            }
-            set_transient($seen, 1, self::SEEN_TTL);
+        //
+        // MARKED SEEN ONLY ONCE IT HAS WORKED (review LOW 7). Marking it before
+        // meant that if apply() threw, this answered 500 so btab retried — and
+        // the retry was then answered "repeat" and never applied. The failure
+        // was silently permanent, which is the worst shape a retry ladder can
+        // have.
+        $seen = $key !== '' ? 'btab_wc_evt_' . md5($key) : '';
+        if ($seen !== '' && get_transient($seen)) {
+            return new WP_REST_Response(array('ok' => true, 'repeat' => true), 200);
         }
 
-        if (!$btab_id) {
+        if (!$btab_id && !$is_order) {
             // An event about something this plugin does not mirror. Accepted,
             // so btab does not retry it, and ignored.
+            if ($seen !== '') {
+                set_transient($seen, 1, self::SEEN_TTL);
+            }
             return new WP_REST_Response(array('ok' => true), 200);
         }
 
         try {
-            self::apply($name, $btab_id);
+            if ($is_order) {
+                Btab_WC_Orders::apply($name, $data);
+            } else {
+                self::apply($name, $btab_id);
+            }
         } catch (Exception $e) {
             // 500 so btab retries on its own ladder. The detail goes to the
             // shop's log; it may name btab, and it must not reach a response
             // body that could be read by whoever sent the request.
-            Btab_WC_Delivery::log('Change event ' . $name . ' for ' . $btab_id . ' failed: ' . $e->getMessage());
+            Btab_WC_Delivery::log('Event ' . $name . ' failed: ' . $e->getMessage());
             return new WP_REST_Response(null, 500);
         }
 
+        if ($seen !== '') {
+            set_transient($seen, 1, self::SEEN_TTL);
+        }
         return new WP_REST_Response(array('ok' => true), 200);
     }
 

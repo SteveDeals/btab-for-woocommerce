@@ -4,7 +4,7 @@ Tags: woocommerce, products, catalogue, dropshipping, checkout
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.1.0
+Stable tag: 0.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -24,19 +24,22 @@ Your WooCommerce shop sells btab's products as if they were your own. The plugin
 * Marks out-of-stock items as out of stock
 * Shows an enquiry form instead of Add to cart for items btab sells by enquiry
 * Hears about a change from btab the moment it happens, signed, and updates just that product within seconds
+* Marks an order paid when btab says it was paid, even if the buyer never came back to your thank-you page, and moves it to Refunded when btab refunds it
 * Reconciles nightly as a safety net, and on demand with **Sync now**
 * Quotes delivery from btab for the buyer's postcode, and uses that figure instead of your own shipping rates on any cart holding btab products
 * Hands the cart to btab at **Place order**, takes the buyer to btab's checkout on your own domain, and brings them back to your thank-you page
 * Stops any other payment method taking money for btab products
 * Leaves your own WooCommerce emails to do the talking, from your own domain
+* Holds btab's price and stock against accidental edits in wp-admin, wherever the edit comes from, with a link to change them in btab
 
 = What it does not do yet =
 
 Said plainly, so you can judge whether it is useful to you now:
 
 * Mixed carts: btab's products and your own goods together get no delivery option and no way to pay, with a line asking for two orders. There is no honest single freight price for the two
-* Refunds and tracking are not yet copied back into WooCommerce
-* btab's fields are not yet locked against editing in wp-admin
+* Your own variations on a btab product: btab cannot ship a variation it has never heard of, so one you add is shown but cannot be bought. Delete it yourself if you do not want it on the page
+* Tracking numbers are not yet copied back into WooCommerce: btab's order messages do not carry them yet
+* Refunds are reflected in the order's status, but the money is refunded by the supplier, not through your gateway
 * The plugin does not yet update itself
 
 = What you need =
@@ -86,6 +89,10 @@ No, and you must not use one. A store API key (`btab_live_…`) is not a shop-wi
 
 == Changelog ==
 
+= 0.2.0 =
+* Delivery priced by btab, checkout handed to btab on your own domain, live updates, order copy, and btab's numbers held against accidental edits. The first version a shop can actually sell with.
+* On update from 0.1.0 the plugin asks for one full resync, so every product gets btab's reference price and stock.
+
 = 0.1.0 =
 * First release. Product import: real simple and variable products, photos copied into the Media Library, categories, out-of-stock, enquiry-only, resync on a schedule and a Sync now button.
 * Live updates: btab sends a signed message when one of your products changes and your shop updates just that product in seconds. Signature checked over the raw bytes, messages older than five minutes refused, repeats ignored. The scheduled run drops to nightly and becomes the safety net.
@@ -95,5 +102,5 @@ No, and you must not use one. A store API key (`btab_live_…`) is not a shop-wi
 
 == Upgrade Notice ==
 
-= 0.1.0 =
-First release. Import products, quote delivery and take an order, end to end.
+= 0.2.0 =
+Import, delivery, checkout, live updates and order copy. One resync runs by itself after the update.

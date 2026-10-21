@@ -157,12 +157,38 @@ class Btab_WC_Gateway extends WC_Payment_Gateway
             return $this->failed(__('We could not start the payment. Please try again in a moment.', 'btab-woocommerce'));
         }
 
-        $order->update_meta_data(self::META_SESSION, $session_id);
+        // EVERY session id, not just the latest (review M1). A buyer who is
+        // sent to the payment page, comes back and presses Place order again
+        // gets a second session on the SAME Woo order, and the first one stays
+        // open for thirty minutes. If they pay in the first tab, an order that
+        // remembered only the latest id would not be found: the money is taken,
+        // the order stays pending, and Woo's hold-stock job cancels it.
+        if (!in_array($session_id, self::session_ids($order), true)) {
+            $order->add_meta_data(self::META_SESSION, $session_id, false);
+        }
         $order->update_meta_data(self::META_CART, $cart_id);
         $order->add_order_note(__('Sent to the payment page. Waiting to hear that it was paid.', 'btab-woocommerce'));
         $order->save();
 
         return array('result' => 'success', 'redirect' => $continue);
+    }
+
+    /**
+     * Every checkout session this order has opened, oldest first.
+     *
+     * @param WC_Order $order
+     * @return string[]
+     */
+    public static function session_ids($order)
+    {
+        $out = array();
+        foreach ((array) $order->get_meta(self::META_SESSION, false) as $meta) {
+            $value = is_object($meta) && isset($meta->value) ? (string) $meta->value : (string) $meta;
+            if ($value !== '' && !in_array($value, $out, true)) {
+                $out[] = $value;
+            }
+        }
+        return $out;
     }
 
     /** One plain sentence for the buyer, and no order left half-made. */
@@ -189,24 +215,40 @@ class Btab_WC_Gateway extends WC_Payment_Gateway
         if (!$order || $order->get_payment_method() !== self::ID || $order->is_paid()) {
             return;
         }
-        $session_id = (string) $order->get_meta(self::META_SESSION);
-        if ($session_id === '') {
-            return;
-        }
         $client = btab_wc_client();
         if (!$client) {
             return;
         }
 
-        try {
-            $answer = $client->get_checkout_session($session_id);
-        } catch (Btab_Api_Exception $e) {
-            Btab_WC_Delivery::log('Could not read checkout session ' . $session_id . ': ' . $e->getMessage());
+        // Ask about every session this order has opened, newest first: the one
+        // the buyer actually paid in may not be the one they came back from.
+        $cs = array();
+        $status = '';
+        $session_id = '';
+        foreach (array_reverse(self::session_ids($order)) as $candidate) {
+            try {
+                $answer = $client->get_checkout_session($candidate);
+            } catch (Btab_Api_Exception $e) {
+                Btab_WC_Delivery::log('Could not read checkout session ' . $candidate . ': ' . $e->getMessage());
+                continue;
+            }
+            $this_cs = isset($answer['checkout_session']) && is_array($answer['checkout_session']) ? $answer['checkout_session'] : array();
+            $this_status = isset($this_cs['status']) ? (string) $this_cs['status'] : '';
+            if ($session_id === '') {
+                $cs = $this_cs;
+                $status = $this_status;
+                $session_id = $candidate;
+            }
+            if ($this_status === 'complete') {
+                $cs = $this_cs;
+                $status = 'complete';
+                $session_id = $candidate;
+                break;
+            }
+        }
+        if ($session_id === '') {
             return;
         }
-
-        $cs = isset($answer['checkout_session']) && is_array($answer['checkout_session']) ? $answer['checkout_session'] : array();
-        $status = isset($cs['status']) ? (string) $cs['status'] : '';
 
         if ($status === 'complete') {
             // btab's own order number when it is in the answer. It is not in
@@ -215,16 +257,15 @@ class Btab_WC_Gateway extends WC_Payment_Gateway
             // appears and falls back to the session id, which is what the
             // shop can quote back to btab either way.
             $number = isset($cs['order_number']) && $cs['order_number'] ? (string) $cs['order_number'] : '';
-            if ($number !== '') {
-                $order->update_meta_data(self::META_ORDER_NUMBER, $number);
-            }
-            $order->payment_complete($number !== '' ? $number : $session_id);
-            $order->add_order_note(sprintf(
-                /* translators: %s: the supplier's order reference */
-                __('Paid. Supplier order reference: %s', 'btab-woocommerce'),
-                $number !== '' ? $number : $session_id
-            ));
-            $order->save();
+            // ONE paid path, shared with the webhook and taken under one lock
+            // per order (review M2): btab fires checkout_session.completed as
+            // it redirects, so this and the webhook run at the same moment and
+            // both used to see an unpaid order and both call payment_complete.
+            // The return value is deliberately ignored here. This is a page
+            // the buyer is looking at, not a delivery btab will retry: if the
+            // webhook holds the lock, it is doing the work, and the buyer
+            // should see their thank-you page rather than an error.
+            Btab_WC_Orders::mark_paid_once($order->get_id(), $number !== '' ? $number : $session_id, $number, array());
             Btab_WC_Cart::forget();
             if (function_exists('WC') && WC()->cart) {
                 WC()->cart->empty_cart();

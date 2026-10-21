@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       btab for WooCommerce
  * Description:       Sell btab products from your own WooCommerce shop. Products are copied in and kept fresh; the buyer checks out on btab.
- * Version:           0.1.0
+ * Version:           0.2.0
  * Requires at least: 6.5
  * Requires PHP:      7.4
  * WC requires at least: 9.0
@@ -40,7 +40,7 @@
 
 defined('ABSPATH') || exit;
 
-define('BTAB_WC_VERSION', '0.1.0');
+define('BTAB_WC_VERSION', '0.2.0');
 define('BTAB_WC_FILE', __FILE__);
 define('BTAB_WC_DIR', plugin_dir_path(__FILE__));
 define('BTAB_WC_URL', plugin_dir_url(__FILE__));
@@ -61,6 +61,9 @@ require_once BTAB_WC_DIR . 'includes/class-btab-cart.php';
 require_once BTAB_WC_DIR . 'includes/class-btab-delivery.php';
 require_once BTAB_WC_DIR . 'includes/class-btab-checkout.php';
 require_once BTAB_WC_DIR . 'includes/class-btab-events.php';
+require_once BTAB_WC_DIR . 'includes/class-btab-orders.php';
+require_once BTAB_WC_DIR . 'includes/class-btab-locked-fields.php';
+require_once BTAB_WC_DIR . 'includes/class-btab-upgrade.php';
 
 /**
  * WooCommerce has to be active: this plugin has nothing to do without it, and
@@ -124,6 +127,9 @@ add_action('plugins_loaded', function () {
     Btab_WC_Delivery::boot();
     Btab_WC_Checkout::boot();
     Btab_WC_Events::boot();
+    Btab_WC_Orders::boot();
+    Btab_WC_Locked_Fields::boot();
+    Btab_WC_Upgrade::boot();
 });
 
 /**
@@ -139,4 +145,7 @@ register_activation_hook(__FILE__, function () {
 });
 register_deactivation_hook(__FILE__, function () {
     Btab_WC_Sync::unschedule();
+    // The one-off upgrade resync too: a job left pointing at a plugin that is
+    // gone fires into nothing for ever.
+    wp_clear_scheduled_hook(Btab_WC_Upgrade::RESYNC_HOOK);
 });

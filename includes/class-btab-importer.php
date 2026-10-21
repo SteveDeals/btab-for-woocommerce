@@ -119,6 +119,21 @@ class Btab_WC_Importer
      */
     public function import_one($btab_id, array $summary = array())
     {
+        // The guard now hooks EVERY CRUD save, so the sync has to say "this
+        // one is mine". Raised for the whole import of this product, its
+        // variations included, and lowered in a finally so a throw cannot
+        // leave the guard switched off for the rest of the request.
+        Btab_WC_Locked_Fields::$syncing = true;
+        try {
+            return $this->import_one_inner($btab_id, $summary);
+        } finally {
+            Btab_WC_Locked_Fields::$syncing = false;
+        }
+    }
+
+    /** The real work. @see import_one() */
+    private function import_one_inner($btab_id, array $summary = array())
+    {
         $detail = $this->client->product($btab_id);
         $p = isset($detail['product']) && is_array($detail['product']) ? $detail['product'] : $detail;
         if (empty($p['id'])) {
@@ -174,6 +189,22 @@ class Btab_WC_Importer
         $product->update_meta_data(BTAB_WC_META_PRODUCT_ID, (int) $btab_id);
         $product->update_meta_data(BTAB_WC_META_SYNCED_AT, time());
         $product->update_meta_data('_btab_enquiry_only', $enquiry_only ? 'yes' : 'no');
+        // btab's own answers, kept beside the product so wp-admin can put them
+        // back when someone edits a field that is not the shop's to edit
+        // (class-btab-locked-fields.php). Meta is not buyer-visible, so these
+        // keep the _btab_ prefix.
+        // THESE ARE THE VALUES THIS IMPORT ACTUALLY USED, not a second reading
+        // of the payload. The first version read `retail_price_cents` again and
+        // fell back to 0, and read `in_stock` again and fell back to "out of
+        // stock" - both the opposite of the lines above. A VARIABLE PRODUCT HAS
+        // NO `retail_price_cents` (it has `price_range.min_cents`), so the
+        // guard would have stored "0.00", and the first admin save would have
+        // set that product to $0.00 and out of stock: the guard causing the
+        // exact damage it exists to prevent.
+        if ($cents !== null) {
+            $product->update_meta_data('_btab_price', $this->money($cents));
+        }
+        $product->update_meta_data('_btab_stock_status', $in_stock ? 'instock' : 'outofstock');
 
         // Attributes, before the first save, so variations can attach to them.
         if ($has_variants) {
@@ -245,6 +276,7 @@ class Btab_WC_Importer
      */
     private function sync_variations($product_id, array $p, $parent_cents)
     {
+        $parent_btab_id = (int) get_post_meta($product_id, BTAB_WC_META_PRODUCT_ID, true);
         $variants = isset($p['variants']) && is_array($p['variants']) ? $p['variants'] : array();
         $existing = array();
         foreach ((new WC_Product_Variable($product_id))->get_children() as $child_id) {
@@ -285,6 +317,14 @@ class Btab_WC_Importer
             $variation->set_manage_stock(false);
             $variation->set_stock_status($available ? 'instock' : 'outofstock');
             $variation->update_meta_data('_btab_variant_id', $vid);
+            // The guard reads these ON THE VARIATION. A variation is saved
+            // through its own CRUD path and never sees the parent's meta, so
+            // without them every variation was unguarded.
+            $variation->update_meta_data(BTAB_WC_META_PRODUCT_ID, $parent_btab_id);
+            if ($parent_cents !== null) {
+                $variation->update_meta_data('_btab_price', $this->money($parent_cents));
+            }
+            $variation->update_meta_data('_btab_stock_status', $available ? 'instock' : 'outofstock');
             $variation->save();
         }
 

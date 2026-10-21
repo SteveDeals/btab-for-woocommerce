@@ -81,7 +81,15 @@ class Btab_WC_Settings
                 $out['api_base'] = untrailingslashit(esc_url_raw($base));
             }
         }
-        if (isset($input['publishable_key'])) {
+        // CLEARING. An empty box means "leave it as it is", because a browser
+        // never refills a password field and a Save would otherwise wipe the
+        // key every time the owner changed anything else. That leaves no way
+        // to DISCONNECT, which is its own bug: a shop that wants to stop
+        // talking to btab must be able to. Each credential therefore has an
+        // explicit "remove" tick, and only that clears it.
+        if (!empty($input['forget_publishable_key'])) {
+            $out['publishable_key'] = '';
+        } elseif (isset($input['publishable_key'])) {
             $key = trim((string) $input['publishable_key']);
             if ($key !== '') {
                 $probe = new Btab_Client($out['api_base'], $key);
@@ -93,7 +101,12 @@ class Btab_WC_Settings
                 }
             }
         }
-        if (isset($input['webhook_secret'])) {
+        if (!empty($input['forget_webhook_secret'])) {
+            // Live updates off: the route then refuses everything, which is the
+            // right answer for a shop that has disconnected. The nightly
+            // reconcile keeps the catalogue roughly right in the meantime.
+            $out['webhook_secret'] = '';
+        } elseif (isset($input['webhook_secret'])) {
             $secret = trim((string) $input['webhook_secret']);
             if ($secret !== '') {
                 // btab's signing secrets look like whsec_…; anything else is
@@ -171,6 +184,10 @@ class Btab_WC_Settings
                                 <?php if ($s['publishable_key']) : ?>
                                     <br><strong>Set:</strong> <code><?php echo esc_html(self::mask($s['publishable_key'])); ?></code>
                                     — leave the box empty to keep it.
+                                    <br><label>
+                                        <input type="checkbox" name="<?php echo esc_attr(BTAB_WC_OPTION); ?>[forget_publishable_key]" value="1">
+                                        Remove this key. Your shop stops talking to btab; imported products stay where they are.
+                                    </label>
                                 <?php endif; ?>
                             </p>
                         </td>
@@ -207,7 +224,10 @@ class Btab_WC_Settings
                         <p class="description">
                             In btab: <strong>Settings → Developers → Webhooks</strong>. Create a webhook with this
                             address, subscribed to <code>product.created</code>, <code>product.updated</code>,
-                            <code>product.deleted</code> and <code>inventory.updated</code>. btab shows the signing
+                            <code>product.deleted</code>, <code>inventory.updated</code>,
+                            <code>checkout_session.completed</code>, <code>order.paid</code> and
+                            <code>order.refunded</code>. The last three keep your orders right even when a buyer
+                            closes the tab instead of coming back. btab shows the signing
                             secret <strong>once</strong> — paste it below before you leave that page.
                         </p>
                     </td>
@@ -223,6 +243,10 @@ class Btab_WC_Settings
                             <?php if ($s['webhook_secret']) : ?>
                                 <br><strong>Set:</strong> <code><?php echo esc_html(self::mask($s['webhook_secret'])); ?></code>
                                 — leave the box empty to keep it.
+                                <br><label>
+                                    <input type="checkbox" name="<?php echo esc_attr(BTAB_WC_OPTION); ?>[forget_webhook_secret]" value="1">
+                                    Remove this secret. Live updates stop and your shop falls back to the nightly run.
+                                </label>
                             <?php else : ?>
                                 <br><strong>Not set:</strong> live updates are off and your shop is relying on the
                                 scheduled run alone. Paste the secret into the box and press Save.
