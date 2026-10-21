@@ -1,0 +1,88 @@
+# Build the installable zip for every tag, and attach it to a GitHub release.
+#
+# WHY A ZIP PER TAG. A WordPress plugin is installed from a zip whose TOP-LEVEL
+# FOLDER is the plugin slug, so the zip cannot be the repo's own archive (that
+# one unpacks as btab-woocommerce-<sha>/ and WordPress then treats every
+# version as a different plugin). This builds the folder by hand.
+#
+# The release asset is also what the plugin's self-update checks, so its name
+# is stable: btab-woocommerce.zip.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to build (for a rebuild)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  zip:
+    name: Build and attach the plugin zip
+    # GITHUB-HOSTED ON PURPOSE, and it is the only thing that can work today.
+    # Every workflow in btab-api runs on self-hosted labels (btab-ci,
+    # btab-deploy, btab-gate), but those runners are registered to btab-api
+    # ALONE - this repo reports 0 runners, so a self-hosted label here would
+    # queue forever and the release would silently never appear. On a private
+    # repo this job spends GitHub-hosted minutes; it is one short job per tag.
+    # To move it to self-hosted, a runner has to be registered to this repo or
+    # the runners made org-level first, THEN change this line.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: The tag and the plugin header must agree
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          HEADER="$(grep -m1 -oP '^\s*\*\s*Version:\s*\K[0-9][^\s]*' btab-woocommerce.php)"
+          CONST="$(grep -m1 -oP "define\('BTAB_WC_VERSION',\s*'\K[^']+" btab-woocommerce.php)"
+          echo "tag=$VERSION header=$HEADER const=$CONST"
+          # A zip whose header disagrees with its tag makes the self-update loop
+          # forever: WordPress compares the HEADER against the release version.
+          [ "$VERSION" = "$HEADER" ] || { echo "::error::tag $VERSION != plugin header $HEADER"; exit 1; }
+          [ "$VERSION" = "$CONST" ]  || { echo "::error::tag $VERSION != BTAB_WC_VERSION $CONST"; exit 1; }
+
+      - name: Lint every PHP file against the oldest PHP we support
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD":/w -w /w php:7.4-cli \
+            sh -c 'find . -name "*.php" -not -path "./.git/*" -print0 | xargs -0 -n1 php -l'
+
+      - name: Build btab-woocommerce.zip
+        run: |
+          set -euo pipefail
+          STAGE="$(mktemp -d)"
+          mkdir -p "$STAGE/btab-woocommerce"
+          # Only what a shop needs at runtime. No .git, no CI, no dev notes.
+          # Only what a shop needs at runtime. No .git, no CI, no dev notes, and
+          # no docs/ - it holds screenshots and API notes, which would trip the
+          # zip from kilobytes into megabytes for no buyer benefit. LICENSE has
+          # no extension, so the *.md exclude leaves it in, which is required:
+          # a GPL plugin ships its licence.
+          rsync -a --exclude '.git' --exclude '.github' --exclude 'tests' \
+                --exclude 'docs' --exclude '.gitignore' \
+                --exclude '*.md' --include 'readme.txt' \
+                ./ "$STAGE/btab-woocommerce/"
+          cp README.md "$STAGE/btab-woocommerce/README.md" 2>/dev/null || true
+          (cd "$STAGE" && zip -qr btab-woocommerce.zip btab-woocommerce)
+          mv "$STAGE/btab-woocommerce.zip" .
+          unzip -l btab-woocommerce.zip | head -20
+
+      - name: Attach it to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag || github.ref_name }}"
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --title "$TAG" --notes "Install: download btab-woocommerce.zip and upload it under Plugins → Add New → Upload Plugin."
+          gh release upload "$TAG" btab-woocommerce.zip --clobber
