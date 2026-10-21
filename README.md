@@ -43,23 +43,28 @@ Three decisions worth knowing, because they are what keeps the shop behaving lik
 Never paste a **store API key** (`btab_live_…`). It is not a shop-window key, and the plugin refuses it before it is ever sent.
 
 ### Install
-1. Download `btab-woocommerce.zip` from the latest [release](https://github.com/SteveDeals/btab-woocommerce/releases).
+1. Download `btab-woocommerce.zip` from the latest [release](https://github.com/SteveDeals/btab-for-woocommerce/releases).
 2. **Plugins → Add New → Upload Plugin**, choose the zip, activate.
 3. **WooCommerce → btab**, paste the key, **Save**, then **Test connection**.
 4. **Sync now**. Your products appear under Products, marked as btab's.
 
+You only download it by hand once. After that the plugin appears on your own **Dashboard → Updates** screen like any other plugin. btab signs every release, and an update that is not properly signed is refused rather than installed, so your shop can never be handed somebody else's code in btab's name.
+
 Requires WordPress 6.5+, WooCommerce 9.0+ and PHP 7.4+.
 
-### What it does not do yet
+### What works, and what does not yet
 Said plainly, because a plugin that implies more than it does wastes your afternoon:
 
 | | |
 |---|---|
 | Product import, photos, variants, sold-out, enquiry-only | **works** |
-| Delivery quoted by btab at the cart | not yet |
-| Handing the cart to btab checkout at Place order | not yet |
-| Copying paid orders and tracking back into WooCommerce | not yet |
-| Self-update from a release | not yet |
+| Delivery quoted by btab at the cart | **works** |
+| Handing the cart to btab checkout at Place order | **works** |
+| Copying paid and refunded orders back into WooCommerce | **works** |
+| Updating itself when btab publishes a new version | **works** |
+| **Tracking numbers copied back into WooCommerce** | **not yet** — btab's order messages do not carry them |
+| A mixed cart: btab's products and your own goods together | not yet — there is no honest single freight price for the two, so such a cart is refused with a line asking for two orders |
+| Your own variations added to a btab product | not bought — btab cannot ship a variation it has never heard of, so one you add is shown but cannot be bought |
 
 ### Try it without charging anyone
 Make a **test key** (`btab_pk_test_…`) in the same place as a live one. It reads btab's demo store of made-up goods, and its checkout ends in "Place test order" — nothing is charged and nothing is sent. The webhook for such an order says `"livemode": false`. Swap in the live key when you are happy.
@@ -68,7 +73,7 @@ Make a **test key** (`btab_pk_test_…`) in the same place as a live one. It rea
 
 | | |
 |---|---|
-| A bug or a question | [open an issue](https://github.com/SteveDeals/btab-woocommerce/issues) |
+| A bug or a question | [open an issue](https://github.com/SteveDeals/btab-for-woocommerce/issues) |
 | A security problem | **email developers@btab.app**, not an issue — see [SECURITY.md](SECURITY.md) |
 | What changed in a release | [CHANGELOG.md](CHANGELOG.md) |
 
