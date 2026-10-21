@@ -19,7 +19,11 @@ class Btab_WC_Settings
         return array(
             'api_base' => 'https://api.btab.app/api/storefront/v1',
             'publishable_key' => '',
-            'sync_interval' => 'hourly',
+            // Nightly, not hourly: since the plugin hears about changes as they
+            // happen (class-btab-events.php), the scheduled run is a RECONCILE
+            // that catches anything a delivery missed, not the mechanism.
+            'sync_interval' => 'daily',
+            'webhook_secret' => '',
         );
     }
 
@@ -86,6 +90,21 @@ class Btab_WC_Settings
                     add_settings_error(self::PAGE, 'publishable_key', $problem);
                 } else {
                     $out['publishable_key'] = $key;
+                }
+            }
+        }
+        if (isset($input['webhook_secret'])) {
+            $secret = trim((string) $input['webhook_secret']);
+            if ($secret !== '') {
+                // btab's signing secrets look like whsec_…; anything else is
+                // almost certainly the publishable key pasted into the wrong
+                // box, and a clear refusal beats silent 401s nobody can read.
+                if (strpos($secret, 'btab_pk_') === 0 || strpos($secret, 'btab_live_') === 0 || strpos($secret, 'btab_test_') === 0) {
+                    add_settings_error(self::PAGE, 'webhook_secret', 'That is a key, not a signing secret. The signing secret starts with whsec_ and btab shows it once, when you create the webhook.');
+                } elseif (strpos($secret, 'whsec_') !== 0) {
+                    add_settings_error(self::PAGE, 'webhook_secret', 'A signing secret starts with whsec_.');
+                } else {
+                    $out['webhook_secret'] = $secret;
                 }
             }
         }
@@ -160,13 +179,59 @@ class Btab_WC_Settings
                         <th scope="row"><label for="btab_interval">Resync</label></th>
                         <td>
                             <select name="<?php echo esc_attr(BTAB_WC_OPTION); ?>[sync_interval]" id="btab_interval">
-                                <?php foreach (array('hourly' => 'Every hour', 'twicedaily' => 'Twice a day', 'daily' => 'Once a day') as $v => $label) : ?>
+                                <?php foreach (array('daily' => 'Once a day', 'twicedaily' => 'Twice a day', 'hourly' => 'Every hour') as $v => $label) : ?>
                                     <option value="<?php echo esc_attr($v); ?>" <?php selected($s['sync_interval'], $v); ?>><?php echo esc_html($label); ?></option>
                                 <?php endforeach; ?>
                             </select>
+                            <p class="description">
+                                This is the <strong>safety net</strong>, not how your shop keeps up. With live updates
+                                connected below, a change reaches your shop in seconds; this run only catches anything
+                                a delivery missed. Once a day is enough.
+                            </p>
                         </td>
                     </tr>
                 </table>
+
+            <h2>Live updates</h2>
+            <p>
+                Without this, your shop only finds out about a price or stock change on the next scheduled run —
+                up to a day late. With it, btab tells your shop the moment something changes and only that
+                product is updated, within seconds.
+            </p>
+            <table class="form-table" role="presentation">
+                <tr>
+                    <th scope="row">Your shop's address for updates</th>
+                    <td>
+                        <input type="text" class="large-text code" readonly onclick="this.select();"
+                               value="<?php echo esc_attr(Btab_WC_Events::receiver_url()); ?>">
+                        <p class="description">
+                            In btab: <strong>Settings → Developers → Webhooks</strong>. Create a webhook with this
+                            address, subscribed to <code>product.created</code>, <code>product.updated</code>,
+                            <code>product.deleted</code> and <code>inventory.updated</code>. btab shows the signing
+                            secret <strong>once</strong> — paste it below before you leave that page.
+                        </p>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="btab_whsec">Signing secret</label></th>
+                    <td>
+                        <input name="<?php echo esc_attr(BTAB_WC_OPTION); ?>[webhook_secret]" id="btab_whsec"
+                               type="password" class="regular-text code" autocomplete="off"
+                               placeholder="<?php echo esc_attr($s['webhook_secret'] ? self::mask($s['webhook_secret']) : 'whsec_…'); ?>">
+                        <p class="description">
+                            Every update is signed with this, and your shop refuses anything that is not.
+                            <?php if ($s['webhook_secret']) : ?>
+                                <br><strong>Set:</strong> <code><?php echo esc_html(self::mask($s['webhook_secret'])); ?></code>
+                                — leave the box empty to keep it.
+                            <?php else : ?>
+                                <br><strong>Not set:</strong> live updates are off and your shop is relying on the
+                                scheduled run alone. Paste the secret into the box and press Save.
+                            <?php endif; ?>
+                        </p>
+                    </td>
+                </tr>
+            </table>
+
                 <?php submit_button('Save'); ?>
             </form>
 

@@ -15,7 +15,7 @@ flowchart TD
   E -->|paid| F[Your thank-you page]
 ```
 
-1. **Sync** copies btab's products in as real WooCommerce products, on a schedule and on **Sync now**.
+1. **Sync** copies btab's products in as real WooCommerce products. btab tells your shop the moment something changes, so a price or stock change lands in seconds; the scheduled run is the nightly safety net.
 2. The buyer **adds to cart** on your shop, like any other product.
 3. **Place order** hands the cart to btab, which prices every line and opens a checkout session.
 4. The buyer **pays** on your own domain and comes back to your thank-you page.
@@ -23,7 +23,8 @@ flowchart TD
 Three decisions worth knowing, because they are what keeps the shop behaving like a normal WooCommerce shop:
 
 - **Products are real WooCommerce products.** Not shells with a live price filter, and not a custom data store. Woo's sort-by-price, price and stock filters, Product Collection, sitemaps, search and JSON-LD all read the *stored* values, so anything else shows one price and sorts by another.
-- **Nothing calls btab while a page renders.** Product pages stay ordinary, cacheable WordPress pages. btab is called on a schedule, on "Sync now", and at "Place order".
+- **Nothing calls btab while a page renders.** Product pages stay ordinary, cacheable WordPress pages. btab is called when it tells your shop something changed, on the nightly reconcile, on "Sync now", and at "Place order".
+- **Your shop hears about changes; it does not wait for a clock.** btab sends a signed message when one of your products changes, and only that product is updated. Your shop verifies the signature over the raw bytes before it reads anything, refuses a message more than five minutes old, and ignores a repeat. The scheduled run exists to catch what a message missed — never as the way your shop keeps up.
 - **A price in WooCommerce is a cached copy.** btab prices every line at checkout, exactly as a btab storefront re-prices a cached page. The plugin never sends a price.
 
 ## For a shop owner, or a developer building one

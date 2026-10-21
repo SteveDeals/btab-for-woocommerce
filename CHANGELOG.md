@@ -40,6 +40,15 @@ order, end to end, with no btab anywhere a buyer can see.
 - **No other payment method can take money for btab products**, so a
   pre-installed gateway cannot collect for goods nothing will ship.
 - Your own WooCommerce emails are sent as usual, from your own domain.
+- **Live updates.** btab sends a signed message when one of your products
+  changes, and the shop updates **just that product**, in seconds. The
+  signature is checked over the raw bytes before anything is read, a message
+  more than five minutes old is refused, a repeat is ignored, and a product
+  btab stops serving is drafted and hidden rather than deleted. The scheduled
+  resync drops to **nightly** and becomes the safety net for a message that
+  never arrived, not the way the shop keeps up. Paste the signing secret from
+  btab into **WooCommerce → btab → Live updates**; the page shows the address
+  to give btab.
 
 ### Not in this release
 - **Mixed carts.** btab's products and your own goods in one cart get no

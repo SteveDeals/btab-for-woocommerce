@@ -23,7 +23,8 @@ Your WooCommerce shop sells btab's products as if they were your own. The plugin
 * Imports products as real simple and variable products, with photos, stock, categories and options
 * Marks out-of-stock items as out of stock
 * Shows an enquiry form instead of Add to cart for items btab sells by enquiry
-* Resyncs on a schedule, and on demand with **Sync now**
+* Hears about a change from btab the moment it happens, signed, and updates just that product within seconds
+* Reconciles nightly as a safety net, and on demand with **Sync now**
 * Quotes delivery from btab for the buyer's postcode, and uses that figure instead of your own shipping rates on any cart holding btab products
 * Hands the cart to btab at **Place order**, takes the buyer to btab's checkout on your own domain, and brings them back to your thank-you page
 * Stops any other payment method taking money for btab products
@@ -44,7 +45,7 @@ A btab account with products, and a publishable key from your btab dashboard. Wo
 
 = Privacy =
 
-The plugin talks to btab's Storefront API (`api.btab.app`) from your server, to read products, to price a cart's delivery, and to open a checkout session at Place order. Nothing calls btab while a product or category page renders. The cart sent to btab carries product ids, options and quantities — never prices and never the buyer's details. The buyer gives their payment details to btab on the checkout page, not to this plugin. When a buyer sends an enquiry, the name, email and message they type are sent to btab so the seller can answer.
+The plugin talks to btab's Storefront API (`api.btab.app`) from your server, to read products, to price a cart's delivery, and to open a checkout session at Place order. It also exposes one address for btab to send change messages to; every message must be signed with a secret only you and btab hold, and an unsigned one is refused without being read. Nothing calls btab while a product or category page renders. The cart sent to btab carries product ids, options and quantities — never prices and never the buyer's details. The buyer gives their payment details to btab on the checkout page, not to this plugin. When a buyer sends an enquiry, the name, email and message they type are sent to btab so the seller can answer.
 
 == Installation ==
 
@@ -87,6 +88,7 @@ No, and you must not use one. A store API key (`btab_live_…`) is not a shop-wi
 
 = 0.1.0 =
 * First release. Product import: real simple and variable products, photos copied into the Media Library, categories, out-of-stock, enquiry-only, resync on a schedule and a Sync now button.
+* Live updates: btab sends a signed message when one of your products changes and your shop updates just that product in seconds. Signature checked over the raw bytes, messages older than five minutes refused, repeats ignored. The scheduled run drops to nightly and becomes the safety net.
 * Delivery priced by btab for the cart and postcode, replacing your own rates on carts holding btab products. An item btab cannot price reads as "needs a delivery quote", never as free.
 * Checkout handed to btab at Place order, on your own domain, and back to your own thank-you page. No other payment method can take money for btab products.
 * Not in this release: mixed carts, the order copy in wp-admin, locked btab fields.

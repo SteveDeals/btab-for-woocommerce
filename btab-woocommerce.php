@@ -22,8 +22,14 @@
  * real products for the same reason.
  *
  * NOTHING CALLS btab WHILE A PAGE RENDERS. Product pages stay ordinary cached
- * WordPress pages. btab is called on a schedule (WP-Cron), on "Sync now", and
- * at "Place order".
+ * WordPress pages. btab is called when it TELLS US something changed (a signed
+ * event, includes/class-btab-events.php), on the nightly reconcile, on
+ * "Sync now", and at "Place order".
+ *
+ * THE SHOP HEARS, IT DOES NOT WAIT (Steve, 2026-10-21: "If someone updates
+ * their store that's the schedule"). A timer means a price change can sit for
+ * an hour. The scheduled run is the safety net for a delivery that never
+ * arrived, not the mechanism.
  *
  * A PRICE IN WOO IS A CACHED COPY. btab prices every line at checkout, exactly
  * as a btab storefront re-prices a cached page. The plugin never sends a price.
@@ -54,6 +60,7 @@ require_once BTAB_WC_DIR . 'includes/class-btab-catalog.php';
 require_once BTAB_WC_DIR . 'includes/class-btab-cart.php';
 require_once BTAB_WC_DIR . 'includes/class-btab-delivery.php';
 require_once BTAB_WC_DIR . 'includes/class-btab-checkout.php';
+require_once BTAB_WC_DIR . 'includes/class-btab-events.php';
 
 /**
  * WooCommerce has to be active: this plugin has nothing to do without it, and
@@ -116,6 +123,7 @@ add_action('plugins_loaded', function () {
     Btab_WC_Catalog::boot();
     Btab_WC_Delivery::boot();
     Btab_WC_Checkout::boot();
+    Btab_WC_Events::boot();
 });
 
 /**

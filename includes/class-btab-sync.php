@@ -1,6 +1,14 @@
 <?php
 /**
- * When the import runs: WP-Cron on the chosen interval, and a Sync now button.
+ * When the FULL import runs: WP-Cron on the chosen interval, and a Sync now
+ * button.
+ *
+ * THIS IS THE SAFETY NET, NOT THE MECHANISM. Since the plugin hears about
+ * changes as they happen (class-btab-events.php), this run exists to catch
+ * what a delivery missed: a webhook that was never created, a stretch while
+ * the shop was down, an event dead-lettered after its last retry. It defaults
+ * to nightly for that reason. A shop with no signing secret set falls back to
+ * this alone, which is why it still walks the whole catalogue.
  *
  * Nothing here runs while a buyer's page renders. A buyer page never calls
  * btab at all - that is the whole point of copying products in.
@@ -28,7 +36,7 @@ class Btab_WC_Sync
     {
         self::unschedule();
         $s = Btab_WC_Settings::get();
-        $interval = isset($s['sync_interval']) ? $s['sync_interval'] : 'hourly';
+        $interval = isset($s['sync_interval']) ? $s['sync_interval'] : 'daily';
         if (!wp_next_scheduled(self::HOOK)) {
             wp_schedule_event(time() + 60, $interval, self::HOOK);
         }
