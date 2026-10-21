@@ -21,7 +21,22 @@ class Btab_WC_Upgrade
 {
     const OPTION = 'btab_wc_version';
 
-    /** Set when an upgrade wants a resync; cleared only once one is really booked. */
+    /**
+     * '1' while an upgrade wants a resync, '0' once one is really booked.
+     *
+     * ALWAYS PRESENT, NEVER DELETED, AND AUTOLOADED. Both options in this class
+     * are read on EVERY page load, and WordPress charges one database query per
+     * request for any option that is not autoloaded - whether it exists or not.
+     * Absence is not free: get_option() checks `alloptions`, then the
+     * `notoptions` cache, then the object cache, and only then queries; without
+     * a persistent object cache those two caches are empty at the start of every
+     * request, so a MISSING option costs exactly as much as a present one.
+     * (wp-includes/option.php, get_option(), read at WordPress 7.1.3.)
+     *
+     * That is why this is a '1'/'0' flag rather than present/absent: a deleted
+     * flag would have gone on costing a query per request on every shop for
+     * ever, which is what it was doing.
+     */
     const PENDING_RESYNC = 'btab_wc_pending_resync';
 
     /** Its OWN hook. See resync_soon() for why it cannot share the recurring one. */
@@ -33,10 +48,36 @@ class Btab_WC_Upgrade
         add_action(self::RESYNC_HOOK, array(__CLASS__, 'run_resync'));
     }
 
-    /** The version this shop last ran, or '' for a shop that has never recorded one. */
+    /**
+     * The version this shop last ran, or '' for a shop that has never recorded
+     * one. Free: the option is autoloaded, so this reads from the one
+     * `alloptions` query WordPress already makes. See PENDING_RESYNC above for
+     * why that matters on every single page load.
+     */
     public static function installed()
     {
         return (string) get_option(self::OPTION, '');
+    }
+
+    /**
+     * Write an option so it is AUTOLOADED, on every WordPress we support.
+     *
+     * Not simply update_option($k, $v, true): that only moves an EXISTING row's
+     * autoload flag from WordPress 6.6, where the autoload rework landed. This
+     * plugin's header promises 6.5, and on 6.5 the third argument is honoured
+     * only when the option is being created - so an existing non-autoloaded row
+     * would have silently stayed non-autoloaded and the fix would have done
+     * nothing on exactly the shops it is aimed at. delete + add works on both.
+     *
+     * The option is absent for an instant in between. Every step in this class
+     * is required to be safe to run twice, and the worst a racing request can
+     * do is re-book an idempotent resync, so that is acceptable here - but it is
+     * the reason this helper is not used for anything that is not.
+     */
+    private static function write_autoloaded($key, $value)
+    {
+        delete_option($key);
+        add_option($key, $value, '', true);
     }
 
     public static function maybe_upgrade()
@@ -54,7 +95,7 @@ class Btab_WC_Upgrade
         // Write the new version FIRST. A step that fatals must not run again on
         // every single page load afterwards; a shop owner would see a broken
         // site rather than one missed step.
-        update_option(self::OPTION, BTAB_WC_VERSION, false);
+        self::write_autoloaded(self::OPTION, BTAB_WC_VERSION);
 
         // btab's reference values (what the price and stock SHOULD be) only
         // started being recorded in 0.2.0. A shop updating from before that has
@@ -62,8 +103,21 @@ class Btab_WC_Upgrade
         // whatever is stored and cannot tell a stale value from a right one.
         // One resync fixes every product at once.
         if ($was === '' || version_compare($was, '0.2.0', '<')) {
-            update_option(self::PENDING_RESYNC, '1', false);
+            self::write_autoloaded(self::PENDING_RESYNC, '1');
             self::book_resync();
+        }
+
+        // 0.2.1: both of this class's options were written non-autoloaded, so
+        // every page load of every shop without a persistent object cache paid
+        // two database queries for them - one for the version, one for a
+        // pending-resync flag that is normally not even there. Rewrite them
+        // autoloaded, and give the flag the '0' it now needs so that it is
+        // never absent. The current value is carried over, so a shop that is
+        // mid-upgrade with a resync still owed does not lose it.
+        if ($was !== '' && version_compare($was, '0.2.1', '<')) {
+            $pending = get_option(self::PENDING_RESYNC);
+            self::write_autoloaded(self::OPTION, BTAB_WC_VERSION);
+            self::write_autoloaded(self::PENDING_RESYNC, $pending ? '1' : '0');
         }
     }
 
@@ -89,12 +143,14 @@ class Btab_WC_Upgrade
         if (!get_option(self::PENDING_RESYNC)) {
             return;
         }
+        // Cleared to '0', not deleted: see PENDING_RESYNC. A deleted flag is
+        // still one query per request, for ever.
         if (wp_next_scheduled(self::RESYNC_HOOK)) {
-            delete_option(self::PENDING_RESYNC);
+            self::write_autoloaded(self::PENDING_RESYNC, '0');
             return;
         }
         if (wp_schedule_single_event(time() + 60, self::RESYNC_HOOK) !== false) {
-            delete_option(self::PENDING_RESYNC);
+            self::write_autoloaded(self::PENDING_RESYNC, '0');
         }
     }
 

@@ -4,7 +4,7 @@ Tags: woocommerce, products, catalogue, dropshipping, checkout
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.2.0
+Stable tag: 0.2.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -89,6 +89,9 @@ No, and you must not use one. A store API key (`btab_live_…`) is not a shop-wi
 
 == Changelog ==
 
+= 0.2.1 =
+* Faster on every page: the plugin no longer asks the database two extra questions on each load of your shop. Nothing to do; it tidies itself up once after the update.
+
 = 0.2.0 =
 * Delivery priced by btab, checkout handed to btab on your own domain, live updates, order copy, and btab's numbers held against accidental edits. The first version a shop can actually sell with.
 * On update from 0.1.0 the plugin asks for one full resync, so every product gets btab's reference price and stock.
@@ -102,6 +105,9 @@ No, and you must not use one. A store API key (`btab_live_…`) is not a shop-wi
 * Not in this release: mixed carts, the order copy in wp-admin, locked btab fields.
 
 == Upgrade Notice ==
+
+= 0.2.1 =
+A small speed fix. Nothing to do.
 
 = 0.2.0 =
 Import, delivery, checkout, live updates and order copy. One resync runs by itself after the update. From this version on, updates arrive on your Updates screen.

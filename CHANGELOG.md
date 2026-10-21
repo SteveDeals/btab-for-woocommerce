@@ -7,6 +7,18 @@ This project uses [semantic versioning](https://semver.org/). Below 1.0 the
 shape of things can still change between minor versions; the changelog says so
 when it does.
 
+## 0.2.1 — 2026-10-21
+
+### Fixed
+- **Two database queries per page load, gone.** Both of the values the plugin
+  keeps about its own version were stored in a way that WordPress does not keep
+  in memory, so every single page load of every shop without a persistent object
+  cache paid a query for each — and one of them was a flag that is normally not
+  even there, because WordPress charges the same for looking up an option that
+  is absent as one that is present. They are now loaded with WordPress's own
+  settings, so the plugin adds no queries at all. The update rewrites them once,
+  on the first load after it, and carries over a resync that was still owed.
+
 ## 0.2.0 — 2026-10-21
 
 The first version a shop can actually sell with.
