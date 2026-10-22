@@ -21,10 +21,11 @@
  * a btab order: pressing it would move money on the shop's gateway, which took
  * none, while btab's books say otherwise.
  *
- * NOT HERE, AND SAID PLAINLY: tracking numbers. btab's order webhooks carry
- * `{ id, order_number, total_cents, currency, payment_status, paid_at?,
- * refunded_at? }` and no fulfilment detail (orderModel.fireOrderWebhook), so
- * there is nothing to copy yet. When btab sends it, it arrives here.
+ * TRACKING IS HERE NOW (feature woo-plugin-tracking-back). btab sends it on
+ * two topics — `order.shipped` with every parcel known at that moment, and
+ * `order.parcel_shipped` once per parcel on every ship — and both land in
+ * mark_parcels_once() below, which is also where the reason for the second
+ * topic is written down.
  *
  * @package btab-woocommerce
  */
@@ -46,9 +47,12 @@ class Btab_WC_Orders
 
     public static function boot()
     {
-        // wp-admin only; nothing here touches a buyer page.
         add_filter('woocommerce_admin_order_should_render_refunds', array(__CLASS__, 'no_refund_button'), 10, 3);
         add_action('woocommerce_admin_order_data_after_order_details', array(__CLASS__, 'admin_note'));
+        // The one buyer-facing thing this class renders: the parcels. This hook
+        // reaches My account -> Orders, the thank-you page AND the block order
+        // confirmation, so one registration covers classic and block themes.
+        add_action('woocommerce_order_details_after_order_table', array(__CLASS__, 'show_parcels'));
     }
 
     /**
@@ -92,6 +96,27 @@ class Btab_WC_Orders
             // event always arrives at an order that is already paid. The
             // amount check runs for exactly that case, inside the lock.
             self::demand(self::mark_paid_once($order->get_id(), $number, $number, $data));
+            return;
+        }
+
+        if ($name === 'order.shipped') {
+            // Every parcel btab knew about when the order reached 'shipped'.
+            // This event cannot fire again, so a parcel that goes later arrives
+            // only on order.parcel_shipped below.
+            $parcels = isset($o['parcels']) && is_array($o['parcels']) ? $o['parcels'] : array();
+            if ($parcels) {
+                self::demand(self::mark_parcels_once($order->get_id(), $parcels));
+            }
+            return;
+        }
+
+        if ($name === 'order.parcel_shipped') {
+            // ONE parcel, and the only event that reaches a shop when the order
+            // was already marked shipped by hand.
+            $parcel = isset($data['parcel']) && is_array($data['parcel']) ? $data['parcel'] : array();
+            if ($parcel) {
+                self::demand(self::mark_parcels_once($order->get_id(), array($parcel)));
+            }
             return;
         }
 
@@ -458,6 +483,343 @@ class Btab_WC_Orders
         return $render;
     }
 
+    /**
+     * TRACKING, AS THE BUYER'S OWN SHOP SHOWS IT.
+     *
+     * btab tells a shop a parcel went on two different topics, and a shop needs
+     * both (feature woo-plugin-tracking-back):
+     *
+     *   order.shipped          the order reached 'shipped'. Carries data.order.parcels[],
+     *                          every parcel known at that moment. Fires AT MOST ONCE
+     *                          per order and can never fire again.
+     *   order.parcel_shipped   ONE parcel went. Fires every time a part ships,
+     *                          including when the order was already marked shipped —
+     *                          which is the case order.shipped cannot cover, because a
+     *                          vendor can mark a whole order shipped by hand while parts
+     *                          are still to go.
+     *
+     * So the same parcel arrives TWICE, on two events with two different
+     * event_keys. The transient in class-btab-events.php dedupes an event, not a
+     * parcel, so it cannot help here — by design. Hence the ledger below.
+     *
+     * WHERE IT IS STORED, AND WHY NOT WooCommerce's OWN SHAPE. The paid
+     * Shipment Tracking extension reads `_wc_shipment_tracking_items`, and
+     * WooCommerce CORE reads that key nowhere at all — checked against the core
+     * source, zero references. Writing only that shape would therefore show the
+     * buyer NOTHING in every shop without the extension, which is most of them.
+     * So this plugin owns `_btab_parcels` and renders it, and MIRRORS into the
+     * extension's array as a courtesy for shops that do have it. Two further
+     * reasons it could not be the store even if it rendered: its own tracking_id
+     * is md5(provider-number . microtime()), which is non-deterministic and so
+     * useless as an idempotency key; and every consumer renders tracking_number
+     * as a code, so a parcel with a carrier and no number would read as
+     * dispatched-with-a-blank, which is the one thing this must never do.
+     *
+     * @var string
+     */
+    const META_PARCELS = '_btab_parcels';
+
+    /** The extension's array. Written as a mirror, never read as the truth. */
+    const META_WC_TRACKING = '_wc_shipment_tracking_items';
+
+    /**
+     * Record parcels on an order, exactly once each, however many requests
+     * arrive together.
+     *
+     * THE LOCK IS NOT OPTIONAL HERE, and the reason is specific to one meta key
+     * holding a list. order.shipped and order.parcel_shipped can land for one
+     * order at the same instant. Without the lock both read `_btab_parcels`,
+     * both add their own parcel to the array they read, and the second
+     * update_meta_data() silently drops the first — one parcel's tracking gone,
+     * no error anywhere. This is the same race mark_paid_once() was built for,
+     * so it reuses the same acquire()/release().
+     *
+     * @param int   $order_id
+     * @param array $parcels  btab's parcel shapes, each with at least an id
+     * @return string DONE, ALREADY or BUSY
+     */
+    public static function mark_parcels_once($order_id, array $parcels)
+    {
+        $order_id = (int) $order_id;
+        $token = self::acquire($order_id);
+        if ($token === null) {
+            return self::BUSY;
+        }
+        try {
+            $order = wc_get_order($order_id);
+            if (!$order || $order->get_payment_method() !== Btab_WC_Gateway::ID) {
+                // Not a btab order. A shop's own order is never touched.
+                return self::ALREADY;
+            }
+
+            $known = $order->get_meta(self::META_PARCELS);
+            $known = is_array($known) ? $known : array();
+            $added = array();
+
+            foreach ($parcels as $p) {
+                if (!is_array($p)) {
+                    continue;
+                }
+                $pid = isset($p['id']) ? (string) $p['id'] : '';
+                if ($pid === '' || isset($known[$pid])) {
+                    // No id means nothing to key on, so it cannot be deduped and
+                    // must not be stored. Already known means a repeat: the whole
+                    // point of the ledger.
+                    continue;
+                }
+                $carrier = isset($p['carrier']) && $p['carrier'] !== '' ? (string) $p['carrier'] : null;
+                // null, never '': "no number yet" and "an empty number" are
+                // different statements and only one of them is true.
+                //
+                // AND A LINK CAN ARRIVE WITHOUT A NUMBER. btab's cleanShipment()
+                // lets a vendor ship with a tracking link alone ("a tracking
+                // number, a tracking link, or the booked delivery date"), so a
+                // parcel whose only tracking is an https page is a real shape.
+                // Gating the link on the number would throw away the only
+                // tracking btab sent — see show_parcels() and admin_note().
+                $number = isset($p['tracking_number']) && $p['tracking_number'] !== '' ? (string) $p['tracking_number'] : null;
+                $url = isset($p['tracking_url']) && $p['tracking_url'] !== '' ? (string) $p['tracking_url'] : null;
+                if ($url !== null && stripos($url, 'https://') !== 0) {
+                    // A tracking link is shown to a buyer. Anything but https is
+                    // dropped rather than rendered.
+                    $url = null;
+                }
+                $shipped = isset($p['shipped_at']) && $p['shipped_at'] !== '' ? strtotime((string) $p['shipped_at']) : false;
+
+                $known[$pid] = array(
+                    'carrier' => $carrier,
+                    'number' => $number,
+                    'url' => $url,
+                    'shipped_at' => $shipped ? (int) $shipped : null,
+                    // Filled by the mirror below when there is a number to mirror.
+                    'mirror_id' => '',
+                );
+                $added[$pid] = $known[$pid];
+            }
+
+            if (!$added) {
+                return self::ALREADY;
+            }
+
+            $known = self::mirror_parcels($order, $known, $added);
+            $order->update_meta_data(self::META_PARCELS, $known);
+            self::note_parcels($order, $added);
+            // HPOS-safe: update_meta_data + save writes whichever store
+            // WooCommerce is using, where a direct post write would miss it.
+            $order->save();
+            return self::DONE;
+        } finally {
+            self::release($order_id, $token);
+        }
+    }
+
+    /**
+     * Mirror the parcels that have a number into the Shipment Tracking array.
+     *
+     * A COURTESY COPY, not the store. Only parcels WITH a tracking number go:
+     * every consumer of that array renders tracking_number as a code, so a
+     * no-number parcel there would read as dispatched-with-a-blank.
+     *
+     * ONLY THE EXTENSION'S OWN SIX KEYS go in each item. Its CSV export iterates
+     * the item generically and prints every key it finds, name and all, so an
+     * extra `btab_part_id` field would be printed by third-party consumers. The
+     * part-id link lives in `_btab_parcels` instead, as `mirror_id`.
+     *
+     * tracking_id is DELIBERATELY deterministic — md5('parcel-' . part id) —
+     * where the extension itself uses microtime. Nothing requires a particular
+     * derivation (its own REST docs call the field opaque), and deterministic
+     * means a redelivery recomputes the same id, so find-or-skip works instead
+     * of appending a duplicate.
+     *
+     * `wc_st_add_tracking_number()` is NOT used, despite being the documented
+     * helper: it appends unconditionally with a microtime id, so a redelivery
+     * duplicates. We own the array and read-modify-write it.
+     *
+     * @param WC_Order $order
+     * @param array    $known  the full ledger, by part id
+     * @param array    $added  the parcels added this time, by part id
+     * @return array the ledger with mirror_id filled in
+     */
+    private static function mirror_parcels($order, array $known, array $added)
+    {
+        $items = $order->get_meta(self::META_WC_TRACKING);
+        $items = is_array($items) ? $items : array();
+        $have = array();
+        foreach ($items as $it) {
+            if (is_array($it) && isset($it['tracking_id'])) {
+                $have[(string) $it['tracking_id']] = true;
+            }
+        }
+
+        $changed = false;
+        foreach ($added as $pid => $p) {
+            if ($p['number'] === null) {
+                // NOT MIRRORED, deliberately, even when there is a link: the
+                // extension's array has no field for "a link and no number", and
+                // every consumer renders tracking_number as a code, so it would
+                // read as dispatched-with-a-blank. Such a parcel keeps
+                // mirror_id '' and is therefore always rendered by show_parcels()
+                // — including in shops that DO have the extension, which never
+                // received it. No gap, no double render.
+                continue;
+            }
+            $tid = md5('parcel-' . $pid);
+            $known[$pid]['mirror_id'] = $tid;
+            if (isset($have[$tid])) {
+                continue;
+            }
+            $items[] = array(
+                // Empty on purpose: when custom_tracking_provider is set the
+                // extension echoes it verbatim as the carrier and uses
+                // custom_tracking_link as given, with no provider-slug matching.
+                // That is how the carrier reads as the shop's own text.
+                'tracking_provider' => '',
+                'custom_tracking_provider' => $p['carrier'] !== null ? $p['carrier'] : '',
+                'custom_tracking_link' => $p['url'] !== null ? $p['url'] : '',
+                'tracking_number' => $p['number'],
+                // A UNIX INT in storage, even though the REST API documents
+                // YYYY-MM-DD. Writing the array ourselves, we write the int.
+                'date_shipped' => $p['shipped_at'] !== null ? $p['shipped_at'] : time(),
+                'tracking_id' => $tid,
+            );
+            $changed = true;
+        }
+
+        if ($changed) {
+            $order->update_meta_data(self::META_WC_TRACKING, $items);
+        }
+        return $known;
+    }
+
+    /**
+     * One PRIVATE note per parcel — the audit trail, matching the paid and
+     * refunded notes. Private, not a customer note: the buyer already sees the
+     * parcels rendered on the order, and a second copy by email is noise.
+     *
+     * @param WC_Order $order
+     * @param array    $added
+     */
+    private static function note_parcels($order, array $added)
+    {
+        foreach ($added as $p) {
+            if ($p['number'] !== null && $p['carrier'] !== null) {
+                $order->add_order_note(sprintf(
+                    /* translators: 1: carrier name, 2: tracking number */
+                    __('A parcel for this order was dispatched with %1$s, tracking %2$s.', 'btab-woocommerce'),
+                    $p['carrier'],
+                    $p['number']
+                ));
+            } elseif ($p['carrier'] !== null) {
+                $order->add_order_note(sprintf(
+                    /* translators: %s: carrier name */
+                    __('A parcel for this order was dispatched with %s. No tracking number was given.', 'btab-woocommerce'),
+                    $p['carrier']
+                ));
+            } else {
+                $order->add_order_note(__('A parcel for this order was dispatched. No carrier or tracking number was given.', 'btab-woocommerce'));
+            }
+        }
+    }
+
+    /**
+     * The parcels, where the buyer looks: My account -> Orders, the thank-you
+     * page, and the block order confirmation.
+     *
+     * ONE HOOK COVERS ALL THREE. woocommerce_order_details_after_order_table
+     * fires from templates/order/order-details.php (reached by
+     * woocommerce_view_order on the My Account page) and from the block
+     * OrderConfirmation\Totals. It is the hook this plugin already uses for the
+     * order-reference line, so classic and block themes are both covered by one
+     * registration.
+     *
+     * NOTHING IS RENDERED WHEN THERE ARE NO PARCELS, and that is the rule rather
+     * than an omission: absence is what reads as "not dispatched". An empty
+     * heading would read as dispatched-with-nothing, the same way an unpriced
+     * delivery must never read as free.
+     *
+     * NO "btab" ANYWHERE HERE. A buyer bought from this shop; the carrier and
+     * the number are the shop's own text.
+     *
+     * @param WC_Order $order
+     */
+    public static function show_parcels($order)
+    {
+        if (!$order instanceof WC_Order || $order->get_payment_method() !== Btab_WC_Gateway::ID) {
+            return;
+        }
+        $parcels = $order->get_meta(self::META_PARCELS);
+        if (!is_array($parcels) || !$parcels) {
+            return;
+        }
+
+        // When the Shipment Tracking extension is active it renders the mirrored
+        // parcels itself, so only the ones never mirrored (the no-number ones,
+        // which it never received) are ours to show. No duplication, no gap.
+        $reader = class_exists('WC_Shipment_Tracking') || function_exists('wc_st_add_tracking_number');
+        $show = array();
+        foreach ($parcels as $p) {
+            if (!is_array($p)) {
+                continue;
+            }
+            if ($reader && isset($p['mirror_id']) && $p['mirror_id'] !== '') {
+                continue;
+            }
+            $show[] = $p;
+        }
+        if (!$show) {
+            return;
+        }
+
+        // The class name follows show_reference's woocommerce-* convention, and it
+        // matters: a 'btab-' class is the word btab in the page SOURCE, which is
+        // exactly what the buyer's-eye rule forbids. The test greps for it.
+        echo '<section class="woocommerce-order-dispatch"><h2>' . esc_html__('Dispatch', 'btab-woocommerce') . '</h2><ul>';
+        foreach ($show as $p) {
+            $carrier = isset($p['carrier']) && $p['carrier'] !== null ? (string) $p['carrier'] : '';
+            $number = isset($p['number']) && $p['number'] !== null ? (string) $p['number'] : '';
+            $url = isset($p['url']) && $p['url'] !== null ? (string) $p['url'] : '';
+            echo '<li>';
+            if ($number !== '') {
+                $shown = $url !== ''
+                    ? '<a href="' . esc_url($url) . '" rel="nofollow noopener">' . esc_html($number) . '</a>'
+                    : '<code>' . esc_html($number) . '</code>';
+                if ($carrier !== '') {
+                    /* translators: 1: carrier name, 2: the tracking number, possibly a link */
+                    printf(esc_html__('Sent with %1$s. Tracking: %2$s', 'btab-woocommerce'), esc_html($carrier), $shown);
+                } else {
+                    /* translators: %s: the tracking number, possibly a link */
+                    printf(esc_html__('Tracking: %s', 'btab-woocommerce'), $shown);
+                }
+            } elseif ($url !== '') {
+                // A LINK WITH NO NUMBER. Some carriers issue a tracking page and
+                // no number, and btab accepts that ship, so this is the only
+                // tracking there is: showing "no tracking number yet" and
+                // dropping the link would hide it entirely.
+                $link = '<a href="' . esc_url($url) . '" rel="nofollow noopener">'
+                    . esc_html__('Track this parcel', 'btab-woocommerce') . '</a>';
+                if ($carrier !== '') {
+                    /* translators: 1: carrier name, 2: a "Track this parcel" link */
+                    printf(esc_html__('Sent with %1$s. %2$s', 'btab-woocommerce'), esc_html($carrier), $link);
+                } else {
+                    // phpcs:ignore WordPress.Security.EscapeOutput -- built above
+                    echo $link;
+                }
+            } elseif ($carrier !== '') {
+                // NEVER an empty code element: a carrier with no number is
+                // dispatched-without-a-number, which is a different fact.
+                printf(
+                    /* translators: %s: carrier name */
+                    esc_html__('Sent with %s. The carrier has not given a tracking number yet.', 'btab-woocommerce'),
+                    esc_html($carrier)
+                );
+            } else {
+                echo esc_html__('Dispatched. No tracking number yet.', 'btab-woocommerce');
+            }
+            echo '</li>';
+        }
+        echo '</ul></section>';
+    }
+
     /** A line in wp-admin saying where this order really lives. */
     public static function admin_note($order)
     {
@@ -470,6 +832,34 @@ class Btab_WC_Orders
             . '<br><span class="description">'
             . esc_html__('The supplier took the payment and ships the goods. Refund it with them, not here.', 'btab-woocommerce')
             . '</span></p>';
+
+        // The parcels, for the shop owner. Same source as the buyer's view, so
+        // the two cannot disagree.
+        $parcels = $order->get_meta(self::META_PARCELS);
+        if (is_array($parcels) && $parcels) {
+            echo '<p class="form-field form-field-wide"><strong>' . esc_html__('Parcels', 'btab-woocommerce') . ':</strong><br>';
+            foreach ($parcels as $p) {
+                if (!is_array($p)) {
+                    continue;
+                }
+                $carrier = isset($p['carrier']) && $p['carrier'] !== null ? (string) $p['carrier'] : '';
+                $number = isset($p['number']) && $p['number'] !== null ? (string) $p['number'] : '';
+                $purl = isset($p['url']) && $p['url'] !== null ? (string) $p['url'] : '';
+                if ($number !== '') {
+                    $shown = '<code>' . esc_html($number) . '</code>';
+                } elseif ($purl !== '') {
+                    // Same reason as the buyer view: a link-only ship is the only
+                    // tracking btab sent, so the shop owner must see it too.
+                    $shown = '<a href="' . esc_url($purl) . '" rel="nofollow noopener">'
+                        . esc_html__('tracking page', 'btab-woocommerce') . '</a>';
+                } else {
+                    $shown = esc_html__('no tracking number yet', 'btab-woocommerce');
+                }
+                echo esc_html($carrier !== '' ? $carrier : __('carrier not given', 'btab-woocommerce'))
+                    . ' — ' . $shown . '<br>';
+            }
+            echo '</p>';
+        }
     }
 
     /**

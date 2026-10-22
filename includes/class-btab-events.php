@@ -59,6 +59,28 @@ class Btab_WC_Events
     /** How long a handled event id is remembered, so a redelivery changes nothing. */
     const SEEN_TTL = DAY_IN_SECONDS;
 
+    /**
+     * The topics that are about an ORDER rather than a product, handled by
+     * Btab_WC_Orders::apply().
+     *
+     * A CONSTANT RATHER THAN AN INLINE ARRAY so it can be tested. A topic
+     * missing from this list does not error: it falls into the "something this
+     * plugin does not mirror" branch in handle() and is answered 200 and
+     * silently ignored, which is the worst shape a failure can take. The test
+     * asserts this list and apply()'s own routing agree, so dropping a topic
+     * from either side fails rather than going quiet.
+     *
+     * @var string[]
+     */
+    const ORDER_EVENTS = array(
+        'checkout_session.completed',
+        'order.paid',
+        'order.refunded',
+        // Tracking (feature woo-plugin-tracking-back).
+        'order.shipped',
+        'order.parcel_shipped',
+    );
+
     public static function boot()
     {
         add_action('rest_api_init', array(__CLASS__, 'register_route'));
@@ -111,7 +133,7 @@ class Btab_WC_Events
         $key = isset($event['event_key']) ? (string) $event['event_key'] : '';
         $data = isset($event['data']) && is_array($event['data']) ? $event['data'] : array();
         $btab_id = isset($data['product_id']) ? (int) $data['product_id'] : 0;
-        $is_order = in_array($name, array('checkout_session.completed', 'order.paid', 'order.refunded'), true);
+        $is_order = in_array($name, self::ORDER_EVENTS, true);
 
         // A redelivery, or the same event through two subscriptions, must change
         // nothing the second time. btab's own guide says to key on event_key.

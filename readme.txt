@@ -4,7 +4,7 @@ Tags: woocommerce, products, catalogue, dropshipping, checkout
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.2.1
+Stable tag: 0.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -31,13 +31,13 @@ Your WooCommerce shop sells btab's products as if they were your own. The plugin
 * Stops any other payment method taking money for btab products
 * Leaves your own WooCommerce emails to do the talking, from your own domain
 * Holds btab's price and stock against accidental edits in wp-admin, wherever the edit comes from, with a link to change them in btab
+* Copies the carrier and tracking number back onto the order as each parcel is dispatched, where the buyer already looks for them. An order sent in two parcels shows both
 
 = What it does not do yet =
 
 Said plainly, so you can judge whether it is useful to you now:
 
 * Mixed carts: btab's products and your own goods together get no delivery option and no way to pay, with a line asking for two orders. There is no honest single freight price for the two
-* Tracking numbers are not yet copied back into WooCommerce: btab's order messages do not carry them yet
 * Refunds are reflected in the order's status, but the money is refunded by the supplier, not through your gateway
 
 = What you need =
@@ -87,6 +87,12 @@ No, and you must not use one. A store API key (`btab_live_…`) is not a shop-wi
 
 == Changelog ==
 
+= 0.3.0 =
+* Tracking numbers arrive on the order by themselves. As each parcel is sent, its carrier and tracking number appear on the order — in your buyer's account and on the thank-you page, and in wp-admin for you. An order sent in two parcels shows both.
+* If you use WooCommerce Shipment Tracking, the parcels appear there too. If you do not, nothing is missing: the plugin shows them itself.
+* A parcel with no tracking number yet says so in words instead of showing a blank, and an order with nothing sent yet shows nothing at all.
+* Your order statuses are left alone — a two-parcel order is not complete when one parcel leaves, so that stays your decision.
+
 = 0.2.1 =
 * Faster on every page: the plugin no longer asks the database two extra questions on each load of your shop. Nothing to do; it tidies itself up once after the update.
 
@@ -103,6 +109,9 @@ No, and you must not use one. A store API key (`btab_live_…`) is not a shop-wi
 * Not in this release: mixed carts, the order copy in wp-admin, locked btab fields.
 
 == Upgrade Notice ==
+
+= 0.3.0 =
+Tracking numbers now appear on your orders on their own, for your buyer and for you. Nothing to set up.
 
 = 0.2.1 =
 A small speed fix. Nothing to do.

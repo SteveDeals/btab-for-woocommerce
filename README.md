@@ -62,7 +62,7 @@ Said plainly, because a plugin that implies more than it does wastes your aftern
 | Handing the cart to btab checkout at Place order | **works** |
 | Copying paid and refunded orders back into WooCommerce | **works** |
 | Updating itself when btab publishes a new version | **works** |
-| **Tracking numbers copied back into WooCommerce** | **not yet** — btab's order messages do not carry them |
+| Tracking numbers copied back into WooCommerce | **works** — carrier and tracking number per parcel, on the order the buyer already looks at. An order sent in two parcels shows both |
 | A mixed cart: btab's products and your own goods together | not yet — there is no honest single freight price for the two, so such a cart is refused with a line asking for two orders |
 
 ### Try it without charging anyone

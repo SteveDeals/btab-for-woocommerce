@@ -7,6 +7,30 @@ This project uses [semantic versioning](https://semver.org/). Below 1.0 the
 shape of things can still change between minor versions; the changelog says so
 when it does.
 
+## 0.3.0 — 2026-10-22
+
+### Added
+- **Tracking numbers now arrive on the order by themselves.** As each parcel is
+  dispatched, its carrier and tracking number are written onto the WooCommerce
+  order and shown where the buyer already looks — My account → Orders, the
+  thank-you page and the block order confirmation — and to the shop owner in
+  wp-admin. **An order sent in two parcels shows both**, because two suppliers
+  can ship separately; it is a list per order, never one number.
+- Shops that own WooCommerce's **Shipment Tracking** extension also get the
+  parcels in its own format, so its display and anything else reading it work
+  unchanged. Shops without it lose nothing: the plugin renders the parcels
+  itself, which is the normal case rather than the fallback.
+
+### Notes
+- A parcel whose carrier has issued **no** number yet says so in words. It is
+  never shown as a blank tracking number, and an order with no parcels yet
+  shows nothing at all rather than an empty heading.
+- A parcel sent with only a tracking **link** and no number shows the link.
+- The order's status is left alone. A two-parcel order is not complete when one
+  parcel leaves, so your own status rules still decide that.
+- Nothing to set up, and nothing to press. It needs no new permission and adds
+  no page-load cost.
+
 ## 0.2.1 — 2026-10-21
 
 ### Fixed

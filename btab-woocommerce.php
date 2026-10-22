@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       btab for WooCommerce
  * Description:       Sell btab products from your own WooCommerce shop. Products are copied in and kept fresh; the buyer checks out on btab.
- * Version:           0.2.1
+ * Version:           0.3.0
  * Requires at least: 6.5
  * Requires PHP:      7.4
  * WC requires at least: 9.0
@@ -40,7 +40,7 @@
 
 defined('ABSPATH') || exit;
 
-define('BTAB_WC_VERSION', '0.2.1');
+define('BTAB_WC_VERSION', '0.3.0');
 define('BTAB_WC_FILE', __FILE__);
 define('BTAB_WC_DIR', plugin_dir_path(__FILE__));
 define('BTAB_WC_URL', plugin_dir_url(__FILE__));
